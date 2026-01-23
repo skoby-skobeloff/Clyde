@@ -15,7 +15,8 @@ Clyde uses a selection of a lot of models from Google, Meta, Mistral, DeepSeek a
 Clyde can now generate images, provided by [Image Router](https://ir.myqa.cc). Provide it an instruction, and it'll try its best to follow.
 
 ### Pricing
-Clyde exclusively uses free plans of AI APIs, so you don't go bankrupt from all that token throughput. Don't you worry, we are on the lookout for free AI APIs all the time.
+Clyde supports the free plans of Groq and Gemini APIs, as well as the Image Router API. However, Image Router requires a one-time deposit to activate the free plan.<br>
+Clyde currently uses the billed plans of said services, however most features should work on the free plans too.
 
 ## How to run?
 #### Steps Required
