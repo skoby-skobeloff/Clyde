@@ -22,11 +22,14 @@ import aiocron
 from google import genai
 from google.genai import types
 from groq import AsyncGroq
-from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
+from groq.types.chat import (
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 
-# Setup logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -34,26 +37,28 @@ logging.basicConfig(
 logger = logging.getLogger("lunalai")
 data_logger = logging.getLogger("lunalai.stats")
 
-# Load environment variables
+
 load_dotenv()
 
-# Constants
+
 MAX_DISCORD_MESSAGE_LENGTH = 2000
 MAX_CHAT_HISTORY = 30
-DEFAULT_MODEL = "gemini-2.0-flash"
+DEFAULT_MODEL = "gemini-2.5-flash"
 DEFAULT_PROMPT = """
 You are {}, a Discord chatbot.
 
 You are aware of the following:
 - You are currently in the #{} channel.
 - You are currently in the {} server.
+- The current time and date is {}.
 
-If the placeholders haven't been replaced, disregard them.
+IMPORTANT: Blank placeholders are equivalent to {{}}. 
+Do not mention the server or the channel if it is {{}}.
 
 Your personality reflects your name. Try to make up a personality that matches your name.
 """
 
-# Model lists for autocomplete
+
 MODELS = {
     "gemini": [
         # Gemini 3.0 series
@@ -63,9 +68,6 @@ MODELS = {
         "gemini-2.5-pro",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        # Gemini 2.0 series
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
     ],
     "gemma": [
         # Gemma 2 models have been decommissioned.
@@ -75,7 +77,7 @@ MODELS = {
         "gemma-3-12b-it",
         "gemma-3-27b-it",
         "gemma-3n-e2b-it",
-        "gemma-3n-e4b-it"
+        "gemma-3n-e4b-it",
     ],
     "other": [
         # Qwen models
@@ -93,11 +95,17 @@ MODELS = {
         "openai/gpt-oss-20b",
         # Groq in-house models
         "groq/compound",
-        "groq/compound-mini"
+        "groq/compound-mini",
     ],
 }
 
-# Prompt presets
+DEFAULT_IMAGE_MODEL = "gpt-image-1.5"
+IMAGE_MODELS = {
+    "gpt-image-1.5": "gpt-image-1.5",
+    "nano-banana": "gemini-2.5-flash-image",
+    "nano-banana-pro": "gemini-3-pro-image-preview",
+}
+
 PROMPT_PRESETS = {
     "default": DEFAULT_PROMPT,
     "gpt": "You are GPT-5.2, a large language model from OpenAI. Refer to yourself as ChatGPT.",
@@ -107,7 +115,7 @@ PROMPT_PRESETS = {
     "storyteller": "You will make creative stories about the given topics, tell the user said story.",
 }
 
-# Initialize bot
+
 bot = hikari.GatewayBot(
     token=os.getenv("DISCORD_BOT_TOKEN"),
     intents=hikari.Intents.ALL_UNPRIVILEGED,
@@ -117,7 +125,7 @@ inter_client = miru.Client(bot)
 client = lightbulb.client_from_app(bot)
 ai_group = lightbulb.Group("ai", "AI command group")
 
-# Initialize API clients
+
 try:
     gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_TOKEN"))
     groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_TOKEN"))
@@ -125,8 +133,9 @@ except Exception as e:
     logger.error(f"Failed to initialize API clients: {e}")
     raise
 
-# Store user chat histories
+
 chat_histories: Dict[int, List[str]] = {}
+
 
 async def get_owner_ids():
     owner_ids = []
@@ -138,6 +147,7 @@ async def get_owner_ids():
         owner_ids.extend(application.team.members.keys())
 
     return owner_ids
+
 
 async def init_db():
     if not os.path.exists(db_file):
@@ -162,33 +172,47 @@ async def init_db():
                 error_type TEXT,
                 tokens INTEGER
             )
-            """)  # TODO: record data here over time
+            """)  
 
             await db.commit()
         data_logger.info("[STATS] data DB created")
 
+
 @client.error_handler
-async def on_command_error(exc: lightbulb.exceptions.ExecutionPipelineFailedException) -> bool:
+async def on_command_error(
+    exc: lightbulb.exceptions.ExecutionPipelineFailedException,
+) -> bool:
     ctx = exc.context
+
+    if isinstance(exc.__cause__, lightbulb.prefab.cooldowns.OnCooldown):
+        retry_after = int(exc.__cause__.remaining)
+        em = hikari.Embed(
+            title=":clock3: On Cooldown",
+            description="Please wait a moment.\n"
+            f"You can use this command again in **{retry_after}**s",
+            color=hikari.Color.from_hex_code("#5865f2"),
+        )
+        await ctx.respond(em, flags=64)
+        return True
+    
     errid = uuid.uuid4()
     em = hikari.Embed(
         title="<:error:1368156499167150171> Error",
-        description=f"We were unable to generate your response.\n"
-        f"Please report this in the support server with the following code: {errid}",
+        description=f"An internal error has occurred, and the request could not be fulfilled.\n"
+        "The error has been raised in the logs.\n"
+        f"To get details, report this error in the support server with the code `{errid}`.",
         color=hikari.Color.from_hex_code("#ed4245"),
     )
     logging.error(f"Error ID: {errid}")
     logging.error("".join(traceback.format_exception(exc.__cause__)))
     button_view = miru.View()
     button_view.add_item(
-        miru.LinkButton(
-            label="Support Server",
-            url="https://discord.gg/E9UwEAPgU6"
-        )
+        miru.LinkButton(label="Support Server", url="https://discord.gg/E9UwEAPgU6")
     )
 
     await ctx.respond(em, flags=64, components=button_view.build())
     return True
+
 
 @bot.listen(hikari.MessageCreateEvent)
 async def on_message(event):
@@ -200,29 +224,43 @@ async def on_message(event):
 
     reply = event.message.referenced_message
 
-    if isinstance(content, str) and (
-        re.findall(fr'<@(!)?{event.app.cache.get_me().id}>', content) or (
-            reply and reply.author.id == event.app.cache.get_me().id
+    if (
+        isinstance(content, str)
+        and (
+            re.findall(rf"<@(!)?{event.app.cache.get_me().id}>", content)
+            or (reply and reply.author.id == event.app.cache.get_me().id)
         )
-    ) and not event.author.is_bot:
+        and not event.author.is_bot
+    ):
         async with bot.rest.trigger_typing(channel):
-            cleaned_content = re.sub(fr'<@(!)?{event.app.cache.get_me().id}>', '', content)
+            cleaned_content = re.sub(
+                rf"<@(!)?{event.app.cache.get_me().id}>", "", content
+            )
 
             if isinstance(event, hikari.GuildMessageCreateEvent):
-                filled_prompt = DEFAULT_PROMPT.format("Lunal", event.get_channel().name, event.get_guild().name)
+                filled_prompt = DEFAULT_PROMPT.format(
+                    "Lunal", event.get_channel().name, event.get_guild().name, datetime.datetime.now()
+                )
             else:
-                filled_prompt = DEFAULT_PROMPT.format("Lunal", "", "")
+                filled_prompt = DEFAULT_PROMPT.format("Lunal", "", "", datetime.datetime.now())
 
             message = await AIService.generate_text_with_gemini(
-                cleaned_content, DEFAULT_MODEL, filled_prompt, event.message.author.id, None
+                cleaned_content,
+                DEFAULT_MODEL,
+                filled_prompt,
+                event.message.author.id,
+                None,
             )
 
             message += "\n\n-# Mention to continue this conversation."
 
             if len(message) > MAX_DISCORD_MESSAGE_LENGTH:
-                return await channel.send("The response was too long.\nUse the slash command to see longer responses.")
+                return await channel.send(
+                    "The response was too long.\nUse the slash command to see longer responses."
+                )
 
             await channel.send(message)
+
 
 async def record_stats():
     application = await bot.rest.fetch_application()
@@ -247,22 +285,26 @@ class AIView(miru.View):
     ) -> None:
         super().__init__(
             timeout=60
-        )  # Increased timeout to 60 seconds is more user-friendly
+        )  
         self.entries = entries
         self._interaction = interaction
         self.index = 0
 
-        # Initialize buttons with proper disabled states
+        
         self.previous_page.disabled = True
         self.next_page.disabled = len(entries) <= 1
 
-    @miru.button(emoji="<:left:1368155093337243748>", style=hikari.ButtonStyle.SECONDARY)
+    @miru.button(
+        emoji="<:left:1368155093337243748>", style=hikari.ButtonStyle.SECONDARY
+    )
     async def previous_page(self, ctx: miru.ViewContext, button: miru.Button) -> None:
         self.index -= 1
         self._update_buttons()
         await ctx.edit_response(self.entries[self.index], components=self.build())
 
-    @miru.button(emoji="<:right:1368155064925163550>", style=hikari.ButtonStyle.SECONDARY)
+    @miru.button(
+        emoji="<:right:1368155064925163550>", style=hikari.ButtonStyle.SECONDARY
+    )
     async def next_page(self, ctx: miru.ViewContext, button: miru.Button) -> None:
         self.index += 1
         self._update_buttons()
@@ -275,7 +317,7 @@ class AIView(miru.View):
 
     async def view_check(self, ctx: miru.ViewContext) -> bool:
         """Check if the user interacting is the one who invoked the command."""
-        return ctx.user.id == ctx.author.id  # Simplified return
+        return ctx.user.id == ctx.author.id  
 
     async def on_timeout(self) -> None:
         """Disable all buttons when the view times out."""
@@ -285,10 +327,13 @@ class AIView(miru.View):
         with contextlib.suppress(hikari.ForbiddenError):
             await self._interaction.edit_initial_response(components=self.build())
 
+
 def exponential(retry_cnt: int, retry_min: int, retry_max: int):
     """Exponentially back off on failure."""
+
     def decorator(func):
         if asyncio.iscoroutinefunction(func):
+
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
                 got_exc = None
@@ -297,8 +342,9 @@ def exponential(retry_cnt: int, retry_min: int, retry_max: int):
                         return await func(*args, **kwargs)
                     except Exception as exc:
                         got_exc = exc
-                        await asyncio.sleep(min(retry_min * (2 ** attempt), retry_max))
+                        await asyncio.sleep(min(retry_min * (2**attempt), retry_max))
                 raise got_exc
+
             return async_wrapper
 
         @wraps(func)
@@ -309,10 +355,13 @@ def exponential(retry_cnt: int, retry_min: int, retry_max: int):
                     return func(*args, **kwargs)
                 except Exception as exc:
                     got_exc = exc
-                    time.sleep(min(retry_min * (2 ** attempt), retry_max))
+                    time.sleep(min(retry_min * (2**attempt), retry_max))
             raise got_exc
+
         return sync_wrapper
+
     return decorator
+
 
 class AIService:
     """Service for handling AI-related operations"""
@@ -336,9 +385,7 @@ class AIService:
         logger.info("Dispatching text to Llama Guard")
         request = await groq_client.chat.completions.create(
             model="meta-llama/llama-guard-4-12b",
-            messages=[
-                ChatCompletionUserMessageParam(role="user", content=text)
-            ],
+            messages=[ChatCompletionUserMessageParam(role="user", content=text)],
             temperature=0,
         )
 
@@ -367,13 +414,13 @@ class AIService:
         }
 
         severity = severity_map.get(code, 0)
-        is_safe = (tag == "safe")
+        is_safe = tag == "safe"
 
         logger.info(f"Verdict: {tag}, {code}")
 
         if tag == "unsafe" and code is None:
             return False, 2
-            
+
         return is_safe, severity
 
     @staticmethod
@@ -386,19 +433,19 @@ class AIService:
         image: Optional[io.BytesIO] = None,
     ) -> Optional[str]:
         """Generate text using Gemini models with native chat history"""
-        # Check safety of input
+        
         is_safe, severity = await AIService.check_llamaguard(request)
         owner_ids = await get_owner_ids()
         if not is_safe and severity >= 2 and user_id not in owner_ids:
             return "I'm sorry, but I'm unable to assist with that."
+
         
-        # Initialize user chat history if missing
         chat_histories.setdefault(user_id, [])
 
-        # System instruction (not stored in history; just config)
+        
         config = types.GenerateContentConfig(system_instruction=system_prompt)
 
-        # Build structured chat history for Gemini
+        
         history = []
         for i, msg in enumerate(chat_histories[user_id]):
             role = "user" if i % 2 == 0 else "model"
@@ -406,7 +453,7 @@ class AIService:
                 types.Content(role=role, parts=[types.Part.from_text(text=msg)])
             )
 
-        # Add current user request
+        
         if image:
             parts = [
                 types.Part.from_text(text=request),
@@ -417,7 +464,7 @@ class AIService:
 
         history.append(types.Content(role="user", parts=parts))
 
-        # Choose API call depending on model
+        
         if "gemma" in model.lower():
             response = await gemini_client.aio.models.generate_content(
                 model=model, contents=history
@@ -432,11 +479,10 @@ class AIService:
         is_safe, severity = await AIService.check_llamaguard(result)
         if not is_safe and severity >= 2 and user_id not in owner_ids:
             result = "Sorry, that's beyond my current scope."
-        
 
-        # Store assistant reply in history
-        chat_histories[user_id].append(request)  # user input
-        chat_histories[user_id].append(result)   # assistant output
+        
+        chat_histories[user_id].append(request)  
+        chat_histories[user_id].append(result)  
 
         return result
 
@@ -450,14 +496,16 @@ class AIService:
         owner_ids = await get_owner_ids()
         if not is_safe and severity >= 2 and user_id not in owner_ids:
             return "I'm sorry, but I'm unable to assist with that."
-        
+
         chat_histories.setdefault(user_id, []).append(request)
         formatted_history = AIService.format_chat_history(chat_histories[user_id])
 
         response = await groq_client.chat.completions.create(
             model=model,
             messages=[
-                ChatCompletionSystemMessageParam(role="system", content="system_prompt"),
+                ChatCompletionSystemMessageParam(
+                    role="system", content="system_prompt"
+                ),
                 *formatted_history,
             ],
         )
@@ -468,47 +516,74 @@ class AIService:
         if not is_safe and severity >= 2 and user_id not in owner_ids:
             result = "Sorry, that's beyond my current scope."
 
-        # Models like Qwen 3 generate thinking, discard it from the response.
+        
         result = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL)
 
         chat_histories[user_id].append(result)
         return result
 
     @staticmethod
-    async def generate_image(prompt: str, user_id: str) -> Optional[io.BytesIO | str]:
+    async def generate_image(
+        model: str, prompt: str, user_id: str
+    ) -> Optional[io.BytesIO | str]:
         """Generate an image from text prompt"""
         is_safe, severity = await AIService.check_llamaguard(prompt)
         owner_ids = await get_owner_ids()
         if not is_safe and severity >= 2 and user_id not in owner_ids:
             return "I'm sorry, but I cannot generate this image."
-        
-        async with httpx.AsyncClient(timeout=60.0) as img_client:
-            response = await img_client.post(
-                "https://ir-api.myqa.cc/v1/openai/images/generations",
-                json={
-                    "model": "openai/gpt-image-1.5:free",
-                    "prompt": prompt,
-                },
-                headers={
-                    "Authorization": f"Bearer {os.getenv('IMAGE_GEN_TOKEN')}",
-                    "Content-Type": "application/json",
-                },
-            )
 
-            response.raise_for_status()
-            data = response.json()
+        if model == "gpt-image-1.5":
+            async with httpx.AsyncClient(timeout=60.0) as img_client:
+                response = await img_client.post(
+                    "https://ir-api.myqa.cc/v1/openai/images/generations",
+                    json={
+                        "model": "openai/gpt-image-1.5:free",
+                        "prompt": prompt,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {os.getenv('IMAGE_GEN_TOKEN')}",
+                        "Content-Type": "application/json",
+                    },
+                )
 
-            if "data" not in data or not data["data"]:
-                raise RuntimeError("Empty response from image service")
+                response.raise_for_status()
+                data = response.json()
 
-            image_data = await img_client.get(data["data"][0]["url"])
-            image = io.BytesIO(image_data.content)
-            pil_image = Image.open(image)
-            image.seek(0)
+                if not data.get("data"):
+                    failure_reason = data["error"]["message"]
 
-            logging.info(f"MIME type: {Image.MIME.get(pil_image.format)}")
+                    if "safety" in failure_reason:
+                        return "The request was rejected internally. Try again using a different prompt."
+                    else:
+                        return f"Request failed: {failure_reason}" 
+
+                image_data = await img_client.get(data["data"][0]["url"])
+                image = io.BytesIO(image_data.content)
+                image.seek(0)
 
             return image
+        elif model in ["nano-banana", "nano-banana-pro"]:
+            response = await gemini_client.aio.models.generate_content(
+                model=IMAGE_MODELS.get(model),
+                contents=[prompt],
+            )
+
+            image = None
+            for part in response.parts:
+                if part.inline_data:
+                    raw_image = part.as_image()
+                    image = io.BytesIO(raw_image.image_bytes)
+                    image.seek(0)
+
+                    break  # if Nano Banana returns several images, this shouldn't happen
+
+            if not image:
+                raise RuntimeError("no data received, possibly filtered?")
+
+            return image
+        else:
+            raise ValueError(f"model {model} does not generate images")
+
 
 async def generate_text(
     request: str,
@@ -519,7 +594,6 @@ async def generate_text(
 ) -> Optional[str]:
     """Unified text generation function that routes to appropriate service"""
     try:
-        # Route to appropriate service based on model name
         if any(name in model.lower() for name in ["gemma", "gemini"]):
             return await AIService.generate_text_with_gemini(
                 request, model, prompt, user_id, image
@@ -532,7 +606,7 @@ async def generate_text(
         raise RuntimeError(f"An unexpected error occurred: {str(exc)}")
 
 
-# Event handlers
+
 async def on_starting(_: hikari.StartingEvent) -> None:
     """Handle bot startup event"""
     await client.start()
@@ -544,7 +618,7 @@ bot.subscribe(hikari.StartingEvent, on_starting)
 
 async def on_started(_: hikari.StartedEvent) -> None:
     """Handle bot started event"""
-    application = await bot.rest.fetch_application()                           
+    application = await bot.rest.fetch_application()
     all_servers = application.approximate_guild_count
     all_users = application.approximate_user_install_count
     all_shards = bot.shard_count
@@ -569,59 +643,82 @@ async def on_shard_started(ev: hikari.ShardReadyEvent) -> None:
 bot.subscribe(hikari.StartedEvent, on_started)
 
 
-# Autocomplete handlers
+
 async def model_autocomplete(ctx: lightbulb.AutocompleteContext) -> None:
     """Provide model autocomplete suggestions"""
     current_value: str = ctx.focused.value or ""
 
-    # Flatten the model list
     all_models = [model for category in MODELS.values() for model in category]
 
-    # Direct matches first
     prefix_matches = [
         m for m in all_models if m.lower().startswith(current_value.lower())
     ]
     if prefix_matches:
-        return await ctx.respond(prefix_matches[:25])
+        return await ctx.respond(prefix_matches[: len(all_models)])
 
-    # Then fuzzy matches
     fuzzy_matches = difflib.get_close_matches(
         current_value, all_models, n=10, cutoff=0.3
     )
     if fuzzy_matches:
         return await ctx.respond(fuzzy_matches)
 
-    # Default suggestions grouped by type
     suggestions = []
     for category, models in MODELS.items():
-        suggestions.extend(models[:3])  # Take first 3 from each category
+        suggestions.extend(models[:3])
 
-    return await ctx.respond(suggestions[:25])
+    return await ctx.respond(suggestions[: len(all_models)])
+
+
+async def image_model_autocomplete(ctx: lightbulb.AutocompleteContext) -> None:
+    """Provide image model autocomplete suggestions"""
+    current_value: str = ctx.focused.value or ""
+
+    all_models = [model for model in IMAGE_MODELS.keys()]
+
+    prefix_matches = [
+        m for m in all_models if m.lower().startswith(current_value.lower())
+    ]
+
+    if prefix_matches:
+        return await ctx.respond(prefix_matches[: len(all_models)])
+
+    fuzzy_matches = difflib.get_close_matches(
+        current_value, all_models, n=10, cutoff=0.3
+    )
+
+    if fuzzy_matches:
+        return await ctx.respond(fuzzy_matches)
+
+    suggestions = []
+    for model in all_models:
+        suggestions.append(model)
+
+    return await ctx.respond(suggestions[: len(all_models)])
 
 
 async def prompt_preset_autocomplete(ctx: lightbulb.AutocompleteContext) -> None:
     """Provide prompt preset autocomplete suggestions"""
     current_value: str = ctx.focused.value or ""
 
-    # Direct matches first
+    
     prefix_matches = [
         k for k in PROMPT_PRESETS if k.lower().startswith(current_value.lower())
     ]
     if prefix_matches:
         return await ctx.respond(prefix_matches)
 
-    # Then fuzzy matches
+    
     fuzzy_matches = difflib.get_close_matches(
         current_value, PROMPT_PRESETS.keys(), n=5, cutoff=0.3
     )
     if fuzzy_matches:
         return await ctx.respond(fuzzy_matches)
 
-    # Default is all presets
+    
     return await ctx.respond(list(PROMPT_PRESETS.keys()))
 
 
-# Command handlers
+
 @ai_group.register()
 class AIText(lightbulb.SlashCommand, name="text", description="Generate text with AI"):
     request: str = lightbulb.string("request", "The request to send to the AI.")
@@ -642,20 +739,19 @@ class AIText(lightbulb.SlashCommand, name="text", description="Generate text wit
     async def callback(self, ctx: lightbulb.Context) -> None:
         await ctx.defer(ephemeral=False)
 
-        # Resolve prompt preset if needed
-        resolved_prompt = PROMPT_PRESETS.get(self.prompt, self.prompt)
+        
+        resolved_prompt = PROMPT_PRESETS.get(self.prompt, self.prompt).format("Lunal", "", "", datetime.datetime.now())
+
 
         response = await generate_text(
             self.request, self.model, resolved_prompt, ctx.interaction.user.id
         )
 
-        # Handle long responses
+        
         if len(response) > MAX_DISCORD_MESSAGE_LENGTH:
             chunks = []
             while response:
-                split_idx = response.rfind(
-                    "\n\n", 0, MAX_DISCORD_MESSAGE_LENGTH
-                )
+                split_idx = response.rfind("\n\n", 0, MAX_DISCORD_MESSAGE_LENGTH)
 
                 if split_idx in [-1, 0]:
                     split_idx = MAX_DISCORD_MESSAGE_LENGTH
@@ -697,7 +793,7 @@ class AITextWithImage(
     ) -> Optional[hikari.Message | hikari.Snowflake]:
         await ctx.defer(ephemeral=False)
 
-        # Verify image format
+        
         try:
             Image.open(io.BytesIO(await self.image.read()))
         except (UnidentifiedImageError, IOError):
@@ -711,12 +807,12 @@ class AITextWithImage(
                 flags=hikari.MessageFlag.EPHEMERAL,
             )
 
-        # Resolve prompt preset if needed
-        resolved_prompt = PROMPT_PRESETS.get(self.prompt, self.prompt)
+        
+        resolved_prompt = PROMPT_PRESETS.get(self.prompt, self.prompt).format("Lunal", "", "", datetime.datetime.now())
 
         image_data = io.BytesIO(await self.image.read())
 
-        response  = await generate_text(
+        response = await generate_text(
             self.request,
             self.model,
             resolved_prompt,
@@ -724,13 +820,11 @@ class AITextWithImage(
             image_data,
         )
 
-        # Handle long responses
+        
         if len(response) > MAX_DISCORD_MESSAGE_LENGTH:
             chunks = []
             while response:
-                split_idx = response.rfind(
-                    "\n\n", 0, MAX_DISCORD_MESSAGE_LENGTH
-                )
+                split_idx = response.rfind("\n\n", 0, MAX_DISCORD_MESSAGE_LENGTH)
 
                 if split_idx in [-1, 0]:
                     split_idx = MAX_DISCORD_MESSAGE_LENGTH
@@ -747,15 +841,21 @@ class AITextWithImage(
 
 @ai_group.register()
 class AIImage(
-    lightbulb.SlashCommand, name="image", description="Generate image from prompt"
+    lightbulb.SlashCommand, name="image", description="Generate image from prompt", hooks=[lightbulb.prefab.cooldowns.fixed_window(60, 1, "user")]
 ):
-    prompt: str = lightbulb.string("prompt", "The prompt to send to the AI.")
+    prompt: str = lightbulb.string("prompt", "The image to generate.")
+    model: Optional[str] = lightbulb.string(
+        "model",
+        "The model to use.",
+        default=DEFAULT_IMAGE_MODEL,
+        autocomplete=image_model_autocomplete,
+    )
 
     @lightbulb.invoke
     async def callback(self, ctx: lightbulb.Context) -> None:
         await ctx.defer(ephemeral=False)
 
-        image = await AIService.generate_image(self.prompt, ctx.user.id)
+        image = await AIService.generate_image(self.model, self.prompt, ctx.user.id)
 
         if isinstance(image, io.BytesIO):  # image generated
             await ctx.respond(attachments=[hikari.Bytes(image, "image.webp")])
@@ -791,7 +891,9 @@ class Info(
 ):
     @lightbulb.invoke
     async def callback(self, ctx: lightbulb.Context) -> None:
-        models_length = sum(len(models) for models in MODELS.values())
+        models_length = sum(len(models) for models in MODELS.values()) + len(
+            IMAGE_MODELS.keys()
+        )
         application = await bot.rest.fetch_application()
         guild_count = application.approximate_guild_count
         user_count = application.approximate_user_install_count
@@ -799,7 +901,7 @@ class Info(
         ie = hikari.Embed(
             title=f"About {bot.get_me().display_name}",
             description=f"Serving {guild_count} servers and"
-                        f" {user_count} users with AI for free",
+            f" {user_count} users with AI for free",
             color=hikari.Color.from_hex_code("#5865F2"),
         )
 
@@ -852,11 +954,11 @@ class Invite(
         )
 
 
-# Register commands and run bot
+
 def main():
     client.register(ai_group)
 
-    # Check required environment variables
+    
     required_env_vars = [
         "DISCORD_BOT_TOKEN",
         "GEMINI_API_TOKEN",
@@ -874,7 +976,7 @@ def main():
         )
         return
 
-    # Start the bot
+    
     logger.info("Starting bot")
     bot.run()
 
