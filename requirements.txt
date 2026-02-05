@@ -7,8 +7,5 @@ groq
 google-genai
 
 python-dotenv
-
 pillow
-
-aiocron
 aiosqlite
