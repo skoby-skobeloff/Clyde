@@ -4,3 +4,6 @@
 
 # database
 stats.db
+
+# pycache
+**/__pycache__/
