@@ -9,13 +9,12 @@ from internal.config import MODELS, IMAGE_MODELS, PROMPT_PRESETS
 
 loader = lightbulb.Loader()
 
+
 class AIView(miru.View):
     def __init__(
-            self, entries: list[str], interaction: hikari.CommandInteraction
+        self, entries: list[str], interaction: hikari.CommandInteraction
     ) -> None:
-        super().__init__(
-            timeout=60
-        )
+        super().__init__(timeout=60)
         self.entries = entries
         self._interaction = interaction
         self.index = 0

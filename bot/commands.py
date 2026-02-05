@@ -9,13 +9,27 @@ import miru
 
 from PIL import Image, UnidentifiedImageError
 
-from .autocomplete import model_autocomplete, prompt_preset_autocomplete, image_model_autocomplete, AIView
-from internal.config import DEFAULT_MODEL, MAX_DISCORD_MESSAGE_LENGTH, PROMPT_PRESETS, DEFAULT_IMAGE_MODEL, MODELS, IMAGE_MODELS, chat_histories
+from .autocomplete import (
+    model_autocomplete,
+    prompt_preset_autocomplete,
+    image_model_autocomplete,
+    AIView,
+)
+from internal.config import (
+    DEFAULT_MODEL,
+    MAX_DISCORD_MESSAGE_LENGTH,
+    PROMPT_PRESETS,
+    DEFAULT_IMAGE_MODEL,
+    MODELS,
+    IMAGE_MODELS,
+    chat_histories,
+)
 from internal.service import AIService, generate_text
 
 loader = lightbulb.Loader()
 
 ai_group = lightbulb.Group("ai", "AI command group")
+
 
 @ai_group.register()
 class AIText(lightbulb.SlashCommand, name="text", description="Generate text with AI"):
@@ -37,7 +51,9 @@ class AIText(lightbulb.SlashCommand, name="text", description="Generate text wit
     async def callback(self, ctx: lightbulb.Context, inter_client: miru.Client) -> None:
         await ctx.defer(ephemeral=False)
 
-        resolved_prompt = PROMPT_PRESETS.get(self.prompt, self.prompt).format("Lunal", "", "", datetime.datetime.now())
+        resolved_prompt = PROMPT_PRESETS.get(self.prompt, self.prompt).format(
+            "Lunal", "", "", datetime.datetime.now()
+        )
 
         response = await generate_text(
             self.request, self.model, resolved_prompt, ctx.interaction.user.id
@@ -84,7 +100,7 @@ class AITextWithImage(
 
     @lightbulb.invoke
     async def callback(
-            self, ctx: lightbulb.Context, inter_client: miru.Client
+        self, ctx: lightbulb.Context, inter_client: miru.Client
     ) -> Optional[hikari.Message | hikari.Snowflake]:
         await ctx.defer(ephemeral=False)
 
@@ -101,7 +117,9 @@ class AITextWithImage(
                 flags=hikari.MessageFlag.EPHEMERAL,
             )
 
-        resolved_prompt = PROMPT_PRESETS.get(self.prompt, self.prompt).format("Lunal", "", "", datetime.datetime.now())
+        resolved_prompt = PROMPT_PRESETS.get(self.prompt, self.prompt).format(
+            "Lunal", "", "", datetime.datetime.now()
+        )
 
         image_data = io.BytesIO(await self.image.read())
 
@@ -133,8 +151,10 @@ class AITextWithImage(
 
 @ai_group.register()
 class AIImage(
-    lightbulb.SlashCommand, name="image", description="Generate image from prompt",
-    hooks=[lightbulb.prefab.cooldowns.fixed_window(60, 1, "user")]
+    lightbulb.SlashCommand,
+    name="image",
+    description="Generate image from prompt",
+    hooks=[lightbulb.prefab.cooldowns.fixed_window(60, 1, "user")],
 ):
     prompt: str = lightbulb.string("prompt", "The image to generate.")
     model: Optional[str] = lightbulb.string(
@@ -148,7 +168,9 @@ class AIImage(
     async def callback(self, ctx: lightbulb.Context) -> None:
         await ctx.defer(ephemeral=False)
 
-        image = await AIService.generate_image(self.model, self.prompt, str(ctx.user.id))
+        image = await AIService.generate_image(
+            self.model, self.prompt, str(ctx.user.id)
+        )
 
         if isinstance(image, io.BytesIO):  # image generated
             await ctx.respond(attachments=[hikari.Bytes(image, "image.webp")])
@@ -194,7 +216,7 @@ class Info(
         ie = hikari.Embed(
             title=f"About {bot.get_me().display_name}",
             description=f"Serving {guild_count} servers and"
-                        f" {user_count} users with AI for free",
+            f" {user_count} users with AI for free",
             color=hikari.Color.from_hex_code("#5865F2"),
         )
 
@@ -247,5 +269,5 @@ class Invite(
             components=button_view.build(),
         )
 
-loader.command(ai_group)
 
+loader.command(ai_group)

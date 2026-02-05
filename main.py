@@ -21,9 +21,11 @@ bot = hikari.GatewayBot(
 inter_client = miru.Client(bot)
 client = lightbulb.client_from_app(bot)
 
+
 async def load_extensions(_: hikari.StartingEvent):
     await client.load_extensions_from_package(bot_pkg)
     await client.start()
+
 
 bot.subscribe(hikari.StartingEvent, load_extensions)
 
@@ -40,6 +42,7 @@ registry.register_value(type(inter_client), inter_client)
 registry.register_value(type(client), client)
 registry.register_value(type(groq_client), groq_client)
 registry.register_value(type(gemini_client), gemini_client)
+
 
 def main():
     required_env_vars = [

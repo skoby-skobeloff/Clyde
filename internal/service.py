@@ -10,10 +10,14 @@ import httpx
 import groq
 from google import genai
 from google.genai import types
-from groq.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
+from groq.types.chat import (
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 
 from .handlers import exponential
 from .config import MAX_CHAT_HISTORY, IMAGE_MODELS, logger, chat_histories
+
 
 @lightbulb.di.with_di
 async def get_owner_ids(bot: hikari.GatewayBot):
@@ -26,6 +30,7 @@ async def get_owner_ids(bot: hikari.GatewayBot):
         owner_ids.extend(application.team.members.keys())
 
     return owner_ids
+
 
 class AIService:
     """Service for handling AI-related operations"""
@@ -44,7 +49,9 @@ class AIService:
     @staticmethod
     @exponential(3, 5, 30)
     @lightbulb.di.with_di
-    async def check_llamaguard(text: str, groq_client: groq.AsyncGroq) -> tuple[bool, int]:
+    async def check_llamaguard(
+        text: str, groq_client: groq.AsyncGroq
+    ) -> tuple[bool, int]:
         """Validate safety of a request or response"""
 
         logger.info("Dispatching text to Llama Guard")
@@ -92,12 +99,12 @@ class AIService:
     @exponential(3, 5, 30)
     @lightbulb.di.with_di
     async def generate_text_with_gemini(
-            request: str,
-            model: str,
-            system_prompt: str,
-            user_id: int,
-            image: Optional[io.BytesIO],
-            gemini_client: genai.Client,
+        request: str,
+        model: str,
+        system_prompt: str,
+        user_id: int,
+        image: Optional[io.BytesIO],
+        gemini_client: genai.Client,
     ) -> Optional[str]:
         """Generate text using Gemini models with native chat history"""
 
@@ -151,7 +158,11 @@ class AIService:
     @exponential(3, 5, 30)
     @lightbulb.di.with_di
     async def generate_text_with_groq(
-            request: str, model: str, system_prompt: str, user_id: int, groq_client: groq.AsyncGroq,
+        request: str,
+        model: str,
+        system_prompt: str,
+        user_id: int,
+        groq_client: groq.AsyncGroq,
     ) -> Optional[str]:
         """Generate text using Groq models"""
         is_safe, severity = await AIService.check_llamaguard(request)
@@ -166,7 +177,8 @@ class AIService:
             model=model,
             messages=[
                 ChatCompletionSystemMessageParam(
-                    role="system", content=system_prompt,
+                    role="system",
+                    content=system_prompt,
                 ),
                 *formatted_history,
             ],
@@ -186,7 +198,10 @@ class AIService:
     @staticmethod
     @lightbulb.di.with_di
     async def generate_image(
-            model: str, prompt: str, user_id: str, gemini_client: genai.Client,
+        model: str,
+        prompt: str,
+        user_id: str,
+        gemini_client: genai.Client,
     ) -> Optional[io.BytesIO | str]:
         """Generate an image from text prompt"""
         is_safe, severity = await AIService.check_llamaguard(prompt)
@@ -245,6 +260,7 @@ class AIService:
             return image
         else:
             raise ValueError(f"model {model} does not generate images")
+
 
 async def generate_text(
     request: str,

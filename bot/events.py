@@ -10,15 +10,23 @@ import miru
 
 import aiosqlite
 
-from internal.config import DEFAULT_PROMPT, DEFAULT_MODEL, MAX_DISCORD_MESSAGE_LENGTH, db_file, data_logger, logger
+from internal.config import (
+    DEFAULT_PROMPT,
+    DEFAULT_MODEL,
+    MAX_DISCORD_MESSAGE_LENGTH,
+    db_file,
+    data_logger,
+    logger,
+)
 from internal.handlers import init_db
 from internal.service import AIService
 
 loader = lightbulb.Loader()
 
+
 @loader.error_handler
 async def on_command_error(
-        exc: lightbulb.exceptions.ExecutionPipelineFailedException,
+    exc: lightbulb.exceptions.ExecutionPipelineFailedException,
 ) -> bool:
     ctx = exc.context
 
@@ -27,7 +35,7 @@ async def on_command_error(
         em = hikari.Embed(
             title=":clock3: On Cooldown",
             description="Please wait a moment.\n"
-                        f"You can use this command again in **{retry_after}**s",
+            f"You can use this command again in **{retry_after}**s",
             color=hikari.Color.from_hex_code("#5865f2"),
         )
         await ctx.respond(em, flags=64)
@@ -37,8 +45,8 @@ async def on_command_error(
     em = hikari.Embed(
         title="<:error:1368156499167150171> Error",
         description=f"An internal error has occurred, and the request could not be fulfilled.\n"
-                    "The error has been raised in the logs.\n"
-                    f"To get details, report this error in the support server with the code `{errid}`.",
+        "The error has been raised in the logs.\n"
+        f"To get details, report this error in the support server with the code `{errid}`.",
         color=hikari.Color.from_hex_code("#ed4245"),
     )
     logging.error(f"Error ID: {errid}")
@@ -63,24 +71,27 @@ async def on_message(event, bot: hikari.GatewayBot):
     reply = event.message.referenced_message
 
     if (
-            isinstance(content, str)
-            and (
+        isinstance(content, str)
+        and (
             re.findall(rf"<@(!)?{bot.cache.get_me().id}>", content)
             or (reply and reply.author.id == bot.cache.get_me().id)
-    )
-            and not event.author.is_bot
+        )
+        and not event.author.is_bot
     ):
         async with bot.rest.trigger_typing(channel):
-            cleaned_content = re.sub(
-                rf"<@(!)?{bot.cache.get_me().id}>", "", content
-            )
+            cleaned_content = re.sub(rf"<@(!)?{bot.cache.get_me().id}>", "", content)
 
             if isinstance(event, hikari.GuildMessageCreateEvent):
                 filled_prompt = DEFAULT_PROMPT.format(
-                    "Lunal", event.get_channel().name, event.get_guild().name, datetime.datetime.now()
+                    "Lunal",
+                    event.get_channel().name,
+                    event.get_guild().name,
+                    datetime.datetime.now(),
                 )
             else:
-                filled_prompt = DEFAULT_PROMPT.format("Lunal", "", "", datetime.datetime.now())
+                filled_prompt = DEFAULT_PROMPT.format(
+                    "Lunal", "", "", datetime.datetime.now()
+                )
 
             message = await AIService.generate_text_with_gemini(
                 cleaned_content,
@@ -101,6 +112,7 @@ async def on_message(event, bot: hikari.GatewayBot):
     else:
         return None
 
+
 @loader.task(lightbulb.uniformtrigger(hours=24))
 async def record_stats(bot: hikari.GatewayBot):
     application = await bot.rest.fetch_application()
@@ -118,11 +130,13 @@ async def record_stats(bot: hikari.GatewayBot):
         await db.commit()
     data_logger.info(f"[STATS] {today}: {guild_count} guilds, {member_count} members")
 
+
 @loader.listener(hikari.StartingEvent)
 async def on_starting(_: hikari.StartingEvent, client: lightbulb.Client) -> None:
     """Handle bot startup event"""
     await client.start()
     logger.info("Shard initialization in progress")
+
 
 @loader.listener(hikari.StartedEvent)
 async def on_started(_: hikari.StartedEvent, bot: hikari.GatewayBot) -> None:
@@ -142,6 +156,7 @@ async def on_started(_: hikari.StartedEvent, bot: hikari.GatewayBot) -> None:
     logger.info(
         f"{my_name} is now serving {all_servers} servers and {all_users} users on {all_shards} shard{'s' if all_shards > 1 else ''}"
     )
+
 
 @loader.listener(hikari.ShardReadyEvent)
 async def on_shard_started(ev: hikari.ShardReadyEvent) -> None:

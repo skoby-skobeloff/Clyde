@@ -6,6 +6,7 @@ from functools import wraps
 
 from .config import db_file, data_logger
 
+
 def exponential(retry_cnt: int, retry_min: int, retry_max: int):
     """Exponentially back off on failure."""
 
@@ -40,6 +41,7 @@ def exponential(retry_cnt: int, retry_min: int, retry_max: int):
 
     return decorator
 
+
 async def init_db():
     if not os.path.exists(db_file):
         async with aiosqlite.connect(db_file) as db:
@@ -67,4 +69,3 @@ async def init_db():
 
             await db.commit()
         data_logger.info("[STATS] data DB created")
-
