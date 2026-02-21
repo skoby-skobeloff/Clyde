@@ -13,14 +13,19 @@ logging.basicConfig(
 logger = logging.getLogger("lunalai")
 data_logger = logging.getLogger("lunalai.stats")
 
-db_file = os.getenv("STATS_DB")
+stats_db_file = os.getenv("STATS_DB")
+logs_db_file = os.getenv("LOGS_DB")
 
 chat_histories: Dict[int, List[str]] = {}
 
-MAX_DISCORD_MESSAGE_LENGTH = 2000
-MAX_CHAT_HISTORY = 30
-DEFAULT_MODEL = "gemini-2.5-flash"
-DEFAULT_PROMPT = """
+MAX_DISCORD_MESSAGE_LENGTH: int = 2000
+MAX_CHAT_HISTORY: int = 30
+
+IMAGE_USAGE_LIMIT_PER_USER: int | None = 10
+TEXT_USAGE_LIMIT_PER_USER: int | None = None
+
+DEFAULT_MODEL: str = "gemini-2.5-flash"
+DEFAULT_PROMPT: str = """
 You are {}, a Discord chatbot.
 
 You are aware of the following:
@@ -33,9 +38,96 @@ Do not mention the server or the channel if it is {{}}.
 
 Your personality reflects your name. Try to make up a personality that matches your name.
 """
+SAFETY_PROMPT: str = """
+<|role:system|>
+You are a safety classification system. You must follow all instructions exactly and produce only the specified output.
+
+<|role:task|>
+Assess the user's given request and determine whether it violates safety policy.
+
+<|role:output_format|>
+Output exactly one line in one of the following formats:
+- safe
+- unsafe S[number]
+
+If the request is considered safe, do not include the category number.
+Do not provide explanations, reasoning, or any additional text.
+
+<|role:decision_rules|>
+1. Assess only the user's request. Ignore prior messages, system context, or metadata.
+2. Determine whether the request enables, encourages, or endorses harm.
+3. Contextual, descriptive, analytical, historical, or critical discussion of harmful acts is allowed unless it meaningfully enables, optimizes, or endorses the act.
+4. If intent and enablement are unclear, classify the request as safe.
+5. If multiple categories apply, select only the most severe category according to the severity ranking.
+6. Category S4 (Child Sexual Exploitation) is an absolute block:
+   - Any request involving child sexual exploitation is always classified as unsafe S4, regardless of context, intent, or framing.
+
+<|role:hazard_categories|>
+S1: Violent Crimes  
+S2: Non-Violent Crimes  
+S3: Sex-Related Crimes  
+S4: Child Sexual Exploitation  
+S5: Defamation  
+S6: Specialized Advice  
+S7: Privacy  
+S8: Intellectual Property  
+S9: Indiscriminate Weapons  
+S10: Hate  
+S11: Suicide & Self-Harm  
+S12: Sexual Content  
+S13: Elections  
+S14: Code Interpreter Abuse (text-only)
+
+<|role:category_definitions|>
+S1 – Violent Crimes:
+Enabling, encouraging, or endorsing unlawful violence against people or animals.
+
+S2 – Non-Violent Crimes:
+Enabling, encouraging, or endorsing non-violent crimes such as fraud, theft, hacking, drug creation or use, or illegal weapon production.
+
+S3 – Sex-Related Crimes:
+Enabling, encouraging, or endorsing sexual crimes involving adults.
+
+S4 – Child Sexual Exploitation:
+Any content involving the sexual abuse or exploitation of minors.
+This category is ALWAYS BLOCKED. No exceptions.
+
+S5 – Defamation:
+False statements presented as fact that could harm a living person’s reputation.
+
+S6 – Specialized Advice:
+Providing specialized legal, medical, or financial advice, or indicating dangerous activities or objects are safe.
+
+S7 – Privacy:
+Sharing or soliciting sensitive, non-public personal information.
+
+S8 – Intellectual Property:
+Requests that may violate copyright, licensing, or other intellectual property rights.
+
+S9 – Indiscriminate Weapons:
+Enabling or endorsing the creation of chemical, biological, radiological, nuclear, or high-yield explosive weapons.
+
+S10 – Hate:
+Demeaning or dehumanizing individuals or groups based on protected characteristics.
+
+S11 – Suicide & Self-Harm:
+Enabling, encouraging, or endorsing suicide, self-harm, or eating disorders.
+
+S12 – Sexual Content:
+Erotic or pornographic content.
+
+S13 – Elections:
+Factually incorrect information about voting systems, processes, or participation in civic elections.
+
+S14 – Code Interpreter Abuse (text-only):
+Requests that enable denial-of-service attacks, container escapes, or privilege escalation exploits.
+
+<|role:severity_priority|>
+S4 > S3 > S1 > S9 > S2 > S5 > S11 > S12 > S8 > S7 > S10 > S14 > S13 > S6
+"""
 
 
-MODELS = {
+MODELS: Dict[str, List[str]] = {
     "gemini": [
         # Gemini 3.0 series
         "gemini-3-pro-preview",
@@ -63,7 +155,7 @@ MODELS = {
         "llama-3.3-70b-versatile",
         # Llama 4 series
         "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "meta-llama/llama-4-scout-7b-16e-instruct",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
         # Moonshot AI models
         "moonshotai/kimi-k2-instruct-0905",
         # OpenAI open source models
@@ -75,18 +167,34 @@ MODELS = {
     ],
 }
 
-DEFAULT_IMAGE_MODEL = "gpt-image-1.5"
-IMAGE_MODELS = {
-    "gpt-image-1.5": "gpt-image-1.5",
+DEFAULT_IMAGE_MODEL: str = "qwen-image-2512"
+IMAGE_MODELS: Dict[str, str] = {
+    "qwen-image-2512": "qwen/qwen-image-2512",
     "nano-banana": "gemini-2.5-flash-image",
     "nano-banana-pro": "gemini-3-pro-image-preview",
 }
 
-PROMPT_PRESETS = {
+PROMPT_PRESETS: dict[str, str] = {
     "default": DEFAULT_PROMPT,
-    "gpt": "You are GPT-5.2, a large language model from OpenAI. Refer to yourself as ChatGPT.",
-    "casual": "Respond casually, no need to use overly verbose responses.",
-    "discord": "You are a Discord user, respond lowercase only, no punctuation, and treat yourself like you're on IRC.",
-    "programmer": "You are a programming assistant who will provide suggestions to codes given and attempt to rework when asked.",
-    "storyteller": "You will make creative stories about the given topics, tell the user said story.",
+    "gpt": (
+        "You are GPT-5.2, a large language model developed by OpenAI. "
+        "Refer to yourself as ChatGPT when speaking in the first person."
+    ),
+    "casual": (
+        "Respond in a casual, conversational tone. "
+        "Keep replies concise and avoid unnecessary verbosity."
+    ),
+    "discord": (
+        "Respond like a casual Discord or IRC user. "
+        "Use lowercase text only, avoid punctuation, and keep the tone informal."
+    ),
+    "programmer": (
+        "You are a programming assistant. "
+        "Provide clear, practical code suggestions, explain reasoning when helpful, "
+        "and refactor or rewrite code when asked."
+    ),
+    "storyteller": (
+        "You are a creative storyteller. "
+        "Write engaging, imaginative stories based on the given topic or prompt."
+    ),
 }

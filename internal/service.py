@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import time
 from typing import List, Optional
 
 import hikari
@@ -16,7 +17,13 @@ from groq.types.chat import (
 )
 
 from .handlers import exponential
-from .config import MAX_CHAT_HISTORY, IMAGE_MODELS, logger, chat_histories
+from .config import (
+    MAX_CHAT_HISTORY,
+    IMAGE_MODELS,
+    SAFETY_PROMPT,
+    logger,
+    chat_histories,
+)
 
 
 @lightbulb.di.with_di
@@ -54,10 +61,13 @@ class AIService:
     ) -> tuple[bool, int]:
         """Validate safety of a request or response"""
 
-        logger.info("Dispatching text to Llama Guard")
+        logger.info("Checking safety")
         request = await groq_client.chat.completions.create(
-            model="meta-llama/llama-guard-4-12b",
-            messages=[ChatCompletionUserMessageParam(role="user", content=text)],
+            model="openai/gpt-oss-safeguard-20b",
+            messages=[
+                ChatCompletionSystemMessageParam(role="system", content=SAFETY_PROMPT),
+                ChatCompletionUserMessageParam(role="user", content=text),
+            ],
             temperature=0,
         )
 
@@ -134,18 +144,35 @@ class AIService:
 
         history.append(types.Content(role="user", parts=parts))
 
+        start_time = time.perf_counter()
+        ttft = None
+        full_text = []
+
         if "gemma" in model.lower():
-            response = await gemini_client.aio.models.generate_content(
+            stream = await gemini_client.aio.models.generate_content_stream(
                 model=model, contents=history
             )
         else:
-            response = await gemini_client.aio.models.generate_content(
+            stream = await gemini_client.aio.models.generate_content_stream(
                 model=model, config=config, contents=history
             )
 
-        result = response.text
+        async for chunk in stream:
+            if ttft is None:
+                ttft = time.perf_counter() - start_time
+                logger.info(f"TTFT: {ttft:.3f}s")
+            if chunk.text:
+                full_text.append(chunk.text)
 
-        is_safe, severity = await AIService.check_llamaguard(result)
+        end_time = time.perf_counter()
+        raw_result = result = "".join(full_text)
+
+        usage = chunk.usage_metadata
+        if usage and (end_time - (start_time + ttft)) > 0:
+            tps = usage.candidates_token_count / (end_time - (start_time + ttft))
+            logger.info(f"TPS: {tps:.2f}")
+
+        is_safe, severity = await AIService.check_llamaguard(raw_result)
         if not is_safe and severity >= 2 and user_id not in owner_ids:
             result = "Sorry, that's beyond my current scope."
 
@@ -173,6 +200,10 @@ class AIService:
         chat_histories.setdefault(user_id, []).append(request)
         formatted_history = AIService.format_chat_history(chat_histories[user_id])
 
+        start_time = time.perf_counter()
+        ttft = None
+        full_text = ""
+
         response = await groq_client.chat.completions.create(
             model=model,
             messages=[
@@ -182,9 +213,26 @@ class AIService:
                 ),
                 *formatted_history,
             ],
+            stream=True,
         )
 
-        result = response.choices[0].message.content
+        async for chunk in response:
+            if ttft is None and chunk.choices[0].delta.content:
+                ttft = time.perf_counter() - start_time
+                logger.info(f"TTFT: {ttft:.3f}s")
+
+            if len(chunk.choices) > 0:
+                content = chunk.choices[0].delta.content or ""
+                full_text += content
+
+            if chunk.usage is not None:
+                total_tokens = chunk.usage.completion_tokens
+                total_time = time.perf_counter() - start_time
+                generation_time = total_time - ttft
+                tps = total_tokens / generation_time if generation_time > 0 else 0
+                logger.info(f"TPS: {tps:.2f}")
+
+        result = full_text
 
         is_safe, severity = await AIService.check_llamaguard(result)
         if not is_safe and severity >= 2 and user_id not in owner_ids:
@@ -209,12 +257,12 @@ class AIService:
         if not is_safe and severity >= 2 and user_id not in owner_ids:
             return "I'm sorry, but I cannot generate this image."
 
-        if model == "gpt-image-1.5":
+        if model == "qwen-image-2512":
             async with httpx.AsyncClient(timeout=60.0) as img_client:
                 response = await img_client.post(
                     "https://ir-api.myqa.cc/v1/openai/images/generations",
                     json={
-                        "model": "openai/gpt-image-1.5:free",
+                        "model": "qwen/qwen-image-2512",
                         "prompt": prompt,
                     },
                     headers={

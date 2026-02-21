@@ -9,6 +9,7 @@ import miru
 
 from PIL import Image, UnidentifiedImageError
 
+from internal.limits import usage_limit, increase_usage_limit
 from .autocomplete import (
     model_autocomplete,
     prompt_preset_autocomplete,
@@ -31,8 +32,17 @@ loader = lightbulb.Loader()
 ai_group = lightbulb.Group("ai", "AI command group")
 
 
+@lightbulb.hook(lightbulb.ExecutionSteps.CHECKS)
+async def is_banned(_: lightbulb.ExecutionPipeline, ctx: lightbulb.Context) -> None: ...
+
+
 @ai_group.register()
-class AIText(lightbulb.SlashCommand, name="text", description="Generate text with AI"):
+class AIText(
+    lightbulb.SlashCommand,
+    name="text",
+    description="Generate text with AI",
+    hooks=[is_banned, usage_limit],
+):
     request: str = lightbulb.string("request", "The request to send to the AI.")
     model: Optional[str] = lightbulb.string(
         "model",
@@ -76,10 +86,15 @@ class AIText(lightbulb.SlashCommand, name="text", description="Generate text wit
         else:
             await ctx.respond(response)
 
+        await increase_usage_limit(ctx.user.id, "text")
+
 
 @ai_group.register()
 class AITextWithImage(
-    lightbulb.SlashCommand, name="with_image", description="Generate text with an image"
+    lightbulb.SlashCommand,
+    name="with_image",
+    description="Generate text with an image",
+    hooks=[is_banned, usage_limit],
 ):
     request: str = lightbulb.string("request", "The request to send to the AI.")
     image: hikari.Attachment = lightbulb.attachment(
@@ -144,9 +159,11 @@ class AITextWithImage(
                 chunks.append(chunk)
             view = AIView(chunks, interaction=ctx.interaction)
             await ctx.respond(chunks[0], components=view)
-            return inter_client.start_view(view)
+            inter_client.start_view(view)
         else:
-            return await ctx.respond(response)
+            await ctx.respond(response)
+
+        return await increase_usage_limit(ctx.user.id, "text")
 
 
 @ai_group.register()
@@ -154,7 +171,11 @@ class AIImage(
     lightbulb.SlashCommand,
     name="image",
     description="Generate image from prompt",
-    hooks=[lightbulb.prefab.cooldowns.fixed_window(60, 1, "user")],
+    hooks=[
+        is_banned,
+        lightbulb.prefab.cooldowns.fixed_window(60, 1, "user"),
+        usage_limit,
+    ],
 ):
     prompt: str = lightbulb.string("prompt", "The image to generate.")
     model: Optional[str] = lightbulb.string(
@@ -177,12 +198,15 @@ class AIImage(
         else:  # blocked by security
             await ctx.respond(image)
 
+        await increase_usage_limit(ctx.user.id, "image")
+
 
 @ai_group.register()
 class AIClear(
     lightbulb.SlashCommand,
     name="clear",
     description="Clear your chat history with the bot",
+    hooks=[is_banned],
 ):
     @lightbulb.invoke
     async def callback(self, ctx: lightbulb.Context) -> None:

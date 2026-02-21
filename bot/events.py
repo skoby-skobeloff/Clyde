@@ -14,11 +14,12 @@ from internal.config import (
     DEFAULT_PROMPT,
     DEFAULT_MODEL,
     MAX_DISCORD_MESSAGE_LENGTH,
-    db_file,
+    stats_db_file,
     data_logger,
     logger,
 )
-from internal.handlers import init_db
+from internal.handlers import init_stats_db, init_logs_db
+from internal.limits import increase_usage_limit, UsageLimitExceeded
 from internal.service import AIService
 
 loader = lightbulb.Loader()
@@ -39,6 +40,19 @@ async def on_command_error(
             color=hikari.Color.from_hex_code("#5865f2"),
         )
         await ctx.respond(em, flags=64)
+        return True
+    elif isinstance(exc.__cause__, UsageLimitExceeded):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        m_utc = (now + datetime.timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+        e = hikari.Embed(
+            title="Usage Limit Reached",
+            description=f"You can use this command again <t:{int(m_utc.timestamp())}:R>",
+            color=hikari.Color.from_hex_code("#5865f2"),
+        )
+        await ctx.respond(embed=e, flags=64)
         return True
 
     errid = uuid.uuid4()
@@ -122,7 +136,7 @@ async def record_stats(bot: hikari.GatewayBot):
     )
 
     today = datetime.date.today().isoformat()
-    async with aiosqlite.connect(db_file) as db:
+    async with aiosqlite.connect(stats_db_file) as db:
         await db.execute(
             "REPLACE INTO stats (date, guild_count, member_count) VALUES (?, ?, ?)",
             (today, guild_count, member_count),
@@ -151,7 +165,8 @@ async def on_started(_: hikari.StartedEvent, bot: hikari.GatewayBot) -> None:
             type=hikari.ActivityType.LISTENING, name="user requests - / for commands"
         ),
     )
-    await init_db()
+    await init_stats_db()
+    await init_logs_db()
     my_name = bot.cache.get_me().username
     logger.info(
         f"{my_name} is now serving {all_servers} servers and {all_users} users on {all_shards} shard{'s' if all_shards > 1 else ''}"
