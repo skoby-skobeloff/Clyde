@@ -278,16 +278,16 @@ class AIService:
                     failure_reason = data["error"]["message"]
 
                     if "safety" in failure_reason:
-                        return "The request was rejected internally. Try again using a different prompt."
+                        return "The request was filtered by the provider. Try again using a different prompt."
                     else:
-                        return f"Request failed: {failure_reason}"
+                        return f"The request failed because `{failure_reason}`. Try again using a different prompt."
 
                 image_data = await img_client.get(data["data"][0]["url"])
                 image = io.BytesIO(image_data.content)
                 image.seek(0)
 
             return image
-        elif model in ["nano-banana", "nano-banana-pro"]:
+        elif model in IMAGE_MODELS.keys():
             response = await gemini_client.aio.models.generate_content(
                 model=IMAGE_MODELS.get(model),
                 contents=[prompt],
@@ -303,7 +303,7 @@ class AIService:
                     break  # if Nano Banana returns several images, this shouldn't happen
 
             if not image:
-                raise RuntimeError("no data received, possibly filtered?")
+                raise RuntimeError("no data received")
 
             return image
         else:

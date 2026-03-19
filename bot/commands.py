@@ -194,7 +194,13 @@ class AIImage(
         )
 
         if isinstance(image, io.BytesIO):  # image generated
-            await ctx.respond(attachments=[hikari.Bytes(image, "image.webp")])
+            # Discord may compress WebP images badly, convert them to PNG.
+            orig = Image.open(image)
+            png = io.BytesIO()
+            orig.save(png, format="PNG")
+            png.seek(0)
+
+            await ctx.respond(attachments=[hikari.Bytes(png, "image.png")])
         else:  # blocked by security
             await ctx.respond(image)
 

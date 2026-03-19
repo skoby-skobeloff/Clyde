@@ -129,8 +129,9 @@ S4 > S3 > S1 > S9 > S2 > S5 > S11 > S12 > S8 > S7 > S10 > S14 > S13 > S6
 
 MODELS: Dict[str, List[str]] = {
     "gemini": [
+        # Gemini 3.1 series
+        "gemini-3.1-pro-preview",
         # Gemini 3.0 series
-        "gemini-3-pro-preview",
         "gemini-3-flash-preview",
         # Gemini 2.5 series
         "gemini-2.5-pro",
@@ -172,6 +173,7 @@ IMAGE_MODELS: Dict[str, str] = {
     "qwen-image-2512": "qwen/qwen-image-2512",
     "nano-banana": "gemini-2.5-flash-image",
     "nano-banana-pro": "gemini-3-pro-image-preview",
+    "nano-banana-2": "gemini-3.1-flash-image-preview",
 }
 
 PROMPT_PRESETS: dict[str, str] = {
