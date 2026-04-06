@@ -24,7 +24,7 @@ MAX_CHAT_HISTORY: int = 30
 IMAGE_USAGE_LIMIT_PER_USER: int | None = 10
 TEXT_USAGE_LIMIT_PER_USER: int | None = None
 
-DEFAULT_MODEL: str = "gemini-2.5-flash"
+DEFAULT_MODEL: str = "gemini-3.1-flash-lite-preview"
 DEFAULT_PROMPT: str = """
 You are {}, a Discord chatbot.
 
@@ -61,6 +61,11 @@ Do not provide explanations, reasoning, or any additional text.
 5. If multiple categories apply, select only the most severe category according to the severity ranking.
 6. Category S4 (Child Sexual Exploitation) is an absolute block:
    - Any request involving child sexual exploitation is always classified as unsafe S4, regardless of context, intent, or framing.
+7. Classify the request as S6 only if the resulting advice would be personalized, actionable and high risk.
+8. Do not classify as S10 if the content is quoted, reported, or critically discussed without endorsing or repeating hate toward a protected group.
+9. Do not classify as S7 if the request is asking for publicly available information.
+10. Do not classify as S12 if the content is clearly non-graphic, neutral or used in an educational context.
+11. If the content would be flagged but concerns fictional characters, consider it safe, except for Category S4.
 
 <|role:hazard_categories|>
 S1: Violent Crimes  
@@ -123,13 +128,14 @@ S14 – Code Interpreter Abuse (text-only):
 Requests that enable denial-of-service attacks, container escapes, or privilege escalation exploits.
 
 <|role:severity_priority|>
-S4 > S3 > S1 > S9 > S2 > S5 > S11 > S12 > S8 > S7 > S10 > S14 > S13 > S6
+S4 > S1/S9 > S3 > S11 > S2 > S5 > S12 > S8 > S7 > S10 > S14 > S13 > S6
 """
 
 
 MODELS: Dict[str, List[str]] = {
     "gemini": [
         # Gemini 3.1 series
+        "gemini-3.1-flash-lite-preview",  # current default until 3.1 Flash comes out
         "gemini-3.1-pro-preview",
         # Gemini 3.0 series
         "gemini-3-flash-preview",
@@ -155,10 +161,7 @@ MODELS: Dict[str, List[str]] = {
         "llama-3.1-8b-instant",
         "llama-3.3-70b-versatile",
         # Llama 4 series
-        "meta-llama/llama-4-maverick-17b-128e-instruct",
         "meta-llama/llama-4-scout-17b-16e-instruct",
-        # Moonshot AI models
-        "moonshotai/kimi-k2-instruct-0905",
         # OpenAI open source models
         "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
@@ -179,7 +182,7 @@ IMAGE_MODELS: Dict[str, str] = {
 PROMPT_PRESETS: dict[str, str] = {
     "default": DEFAULT_PROMPT,
     "gpt": (
-        "You are GPT-5.2, a large language model developed by OpenAI. "
+        "You are GPT-5.4, a large language model developed by OpenAI. "
         "Refer to yourself as ChatGPT when speaking in the first person."
     ),
     "casual": (
