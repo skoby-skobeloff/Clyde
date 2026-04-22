@@ -167,7 +167,7 @@ MODELS: dict[str, list[str]] = {
 }
 
 DEFAULT_IMAGE_MODEL: str = "qwen-image-2512"
-IMAGE_MODELS: Dict[str, str] = {
+IMAGE_MODELS: dict[str, str] = {
     "qwen-image-2512": "qwen/qwen-image-2512",
     "nano-banana": "gemini-2.5-flash-image",
     "nano-banana-pro": "gemini-3-pro-image-preview",
