@@ -1,6 +1,5 @@
 import os
 import logging
-from typing import Dict, List
 
 from dotenv import load_dotenv
 
@@ -16,7 +15,7 @@ data_logger = logging.getLogger("lunalai.stats")
 stats_db_file = os.getenv("STATS_DB")
 logs_db_file = os.getenv("LOGS_DB")
 
-chat_histories: Dict[int, List[str]] = {}
+chat_histories: dict[int, list[str]] = {}
 
 MAX_DISCORD_MESSAGE_LENGTH: int = 2000
 MAX_CHAT_HISTORY: int = 30
@@ -132,7 +131,7 @@ S4 > S1/S9 > S3 > S11 > S2 > S5 > S12 > S8 > S7 > S10 > S14 > S13 > S6
 """
 
 
-MODELS: Dict[str, List[str]] = {
+MODELS: dict[str, list[str]] = {
     "gemini": [
         # Gemini 3.1 series
         "gemini-3.1-flash-lite-preview",  # current default until 3.1 Flash comes out
@@ -143,16 +142,12 @@ MODELS: Dict[str, List[str]] = {
         "gemini-2.5-pro",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
+        # Gemini 2 and older are no longer available.
     ],
     "gemma": [
-        # Gemma 2 models have been decommissioned.
-        # Gemma 3 series
-        "gemma-3-1b-it",
-        "gemma-3-4b-it",
-        "gemma-3-12b-it",
-        "gemma-3-27b-it",
-        "gemma-3n-e2b-it",
-        "gemma-3n-e4b-it",
+        # Gemma 2 and Gemma 3/3n are no longer available.
+        "gemma-4-26b-a4b-it",
+        "gemma-4-31b-it",
     ],
     "other": [
         # Qwen models

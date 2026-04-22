@@ -2,7 +2,7 @@ import io
 import os
 import re
 import time
-from typing import List, Optional
+from typing import Optional
 
 import hikari
 import lightbulb
@@ -43,7 +43,7 @@ class AIService:
     """Service for handling AI-related operations"""
 
     @staticmethod
-    def format_chat_history(messages: List[str]) -> list[dict]:
+    def format_chat_history(messages: list[str]) -> list[dict]:
         """Format chat history for AI consumption"""
         formatted = []
         for i, message in enumerate(messages[:MAX_CHAT_HISTORY], start=1):
