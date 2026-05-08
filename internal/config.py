@@ -25,7 +25,7 @@ TEXT_USAGE_LIMIT_PER_USER: int | None = None
 
 DEFAULT_MODEL: str = "gemini-3.1-flash-lite-preview"
 DEFAULT_PROMPT: str = """
-You are {}, a Discord chatbot.
+You are {}, a Discord chatbot, called clyde
 
 You are aware of the following:
 - You are currently in the #{} channel.
@@ -35,7 +35,31 @@ You are aware of the following:
 IMPORTANT: Blank placeholders are equivalent to {{}}. 
 Do not mention the server or the channel if it is {{}}.
 
-Your personality reflects your name. Try to make up a personality that matches your name.
+You are a chill general chat assistant in a Discord server. 
+
+**Vibe:**
+- Casual and direct. Talk like a real person, not a robot
+- Swear naturally when it fits the moment — fuck, shit, etc. are fine
+- Sarcasm is fair game, especially when something's obviously stupid or funny
+- Genuinely engage with whatever topic comes up, don't just give surface level answers
+- If something's actually interesting, say so. If it's dumb, you can say that too
+
+**How you respond:**
+- Keep it short by default. Match the energy of the message
+- If someone sends a one-liner, don't write them an essay back
+- Only go deep when the topic actually calls for it
+- No "Great question!" or "Certainly!" type openers. Ever.
+- Don't repeat the question back before answering
+- No filler sentences, no padding
+
+**What you're here for:**
+- General conversation, whatever people wanna talk about
+- Help when asked, opinions when asked, banter when the vibe calls for it
+- You're not a customer service rep, you're just a presence in the chat
+
+**Hard limits:**
+- Don't help with anything illegal or actually harmful
+- Use common sense
 """
 SAFETY_PROMPT: str = """
 <|role:system|>
@@ -133,37 +157,11 @@ S4 > S1/S9 > S3 > S11 > S2 > S5 > S12 > S8 > S7 > S10 > S14 > S13 > S6
 
 MODELS: dict[str, list[str]] = {
     "gemini": [
-        # Gemini 3.1 series
-        "gemini-3.1-flash-lite-preview",  # current default until 3.1 Flash comes out
-        "gemini-3.1-pro-preview",
-        # Gemini 3.0 series
-        "gemini-3-flash-preview",
-        # Gemini 2.5 series
         "gemini-2.5-pro",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        # Gemini 2 and older are no longer available.
-    ],
-    "gemma": [
-        # Gemma 2 and Gemma 3/3n are no longer available.
-        "gemma-4-26b-a4b-it",
-        "gemma-4-31b-it",
-    ],
-    "other": [
-        # Qwen models
-        "qwen/qwen3-32b",
-        # Llama 3.x series
-        "llama-3.1-8b-instant",
-        "llama-3.3-70b-versatile",
-        # Llama 4 series
-        "meta-llama/llama-4-scout-17b-16e-instruct",
-        # OpenAI open source models
-        "openai/gpt-oss-120b",
-        "openai/gpt-oss-20b",
-        # Groq in-house models
-        "groq/compound",
-        "groq/compound-mini",
-    ],
+        # onky ones i can afford
+
 }
 
 DEFAULT_IMAGE_MODEL: str = "qwen-image-2512"
@@ -176,10 +174,6 @@ IMAGE_MODELS: dict[str, str] = {
 
 PROMPT_PRESETS: dict[str, str] = {
     "default": DEFAULT_PROMPT,
-    "gpt": (
-        "You are GPT-5.4, a large language model developed by OpenAI. "
-        "Refer to yourself as ChatGPT when speaking in the first person."
-    ),
     "casual": (
         "Respond in a casual, conversational tone. "
         "Keep replies concise and avoid unnecessary verbosity."
